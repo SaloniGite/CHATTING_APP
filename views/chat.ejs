@@ -4,78 +4,79 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chatroom Layout</title>
-    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+    <title>Chatroom</title>
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
 
 <body class="bg-gray-100 h-screen flex items-center justify-center">
     <main class="w-full max-w-4xl p-4 bg-white shadow-lg rounded-lg">
         <section class="flex gap-4">
-            <!-- USER DIV -->
-            <div class="USER bg-blue-100 flex flex-col items-center justify-start w-1/3 p-4">
-                <% onlineUsers.forEach(onlineUser=>{ %>
-                    <div class="bg-blue-500  chat flex items-center gap-4 p-4 bg-white rounded-lg shadow-md"
-                        onclick="selectChat('<%=onlineUser.socketId %>') ">
-                        <img src="<%= onlineUser.image %>" alt="user Avtar " class="w-12 h-12 rounded-full">
-                        <h1>
-                            <%= onlineUser.displayName %>
-                        </h1>
+            <!-- Users List -->
+            <div class="USER bg-blue-100 flex flex-col items-start w-1/3 p-4 overflow-y-auto">
+                <% onlineUsers.forEach(onlineUser => { %>
+                    <div class="chat bg-blue-500 text-white flex items-center gap-4 p-4 mb-2 rounded-lg shadow-md cursor-pointer"
+                        onclick="selectChat('<%= onlineUser._id %>', '<%= onlineUser.displayName %>')">
+                        <img src="<%= onlineUser.image %>" alt="Avatar" class="w-12 h-12 rounded-full">
+                        <h1 class="font-semibold"><%= onlineUser.displayName %></h1>
                     </div>
-                    <%})%>
+                <% }) %>
             </div>
 
-            <!-- CHATROOM DIV -->
+            <!-- Chat Room -->
             <div class="CHATROOM bg-gray-50 flex flex-col w-2/3 p-4">
-                <!-- Chat Messages Section -->
-                <div class="flex-1 overflow-y-auto p-2 border border-gray-300 rounded-lg mb-4">
-                    <p class="text-sm text-gray-500">Chat messages will appear here...</p>
+                <!-- Chat Messages -->
+                <div id="chatMessages" class="flex-1 overflow-y-auto p-2 border border-gray-300 rounded-lg mb-4">
+                    <p class="text-sm text-gray-500">Select a user to start chatting...</p>
                 </div>
 
                 <!-- Input and Send Button -->
                 <div class="flex items-center gap-2">
-                    <input type="text" placeholder="Type your message..."
+                    <input id="messageInput" type="text" placeholder="Type your message..."
                         class="flex-1 border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring focus:ring-blue-300">
-                    <button class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600">
+                    <button id="sendButton" class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600">
                         Send
                     </button>
                 </div>
             </div>
         </section>
     </main>
+
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
-        const user = JSON.parse('<%- JSON.stringify(user) %>')
-        socket.emit('join', user._id)
+        const user = JSON.parse('<%- JSON.stringify(user) %>');
+        socket.emit('join', user._id);
+
         let receiverId = '';
-        function selectChat(socketId) {
-            console.log("Selected chat with socketId:", socketId);
-            receiverId = socketId;
+        let receiverName = '';
+
+        function selectChat(userId, name) {
+            receiverId = userId;
+            receiverName = name;
+            document.getElementById('chatMessages').innerHTML = `<p class="text-sm text-gray-500">Chat with ${receiverName}...</p>`;
         }
 
-
-        document.querySelector('button').addEventListener('click', () => {
-            const message = document.querySelector('input').value;
-          
+        document.getElementById('sendButton').addEventListener('click', () => {
+            const message = document.getElementById('messageInput').value;
             if (!receiverId || !message) {
-                console.error("Receiver ID or message is missing");
+                console.error('Receiver ID or message is missing');
                 return;
             }
-            console.log("Sending message to:", receiverId, "Message:", message);
-            socket.emit('message', {
-                receiverId,
-                message
-            });
-        
+            socket.emit('message', { receiverId, message });
+            const chatMessages = document.getElementById('chatMessages');
+            chatMessages.innerHTML += `<div class="bg-blue-100 p-2 rounded-lg mb-2 text-right">
+                <p class="text-sm text-gray-700">${message}</p>
+            </div>`;
+            document.getElementById('messageInput').value = '';
         });
 
-
         socket.on('message', (data) => {
-            console.log(data)
-        })
-
+            const chatMessages = document.getElementById('chatMessages');
+            chatMessages.innerHTML += `<div class="bg-gray-100 p-2 rounded-lg mb-2">
+                <p class="text-sm text-gray-700"></strong> ${data.message}</p>
+            </div>`;
+        });
     </script>
-
 </body>
 
 </html>
