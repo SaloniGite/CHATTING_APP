@@ -7,17 +7,19 @@ const http = require('http');
 const socketIo = require('socket.io');
 const connect = require('./db/db');
 const UserModel = require('./models/user.model');
+const ChatModel = require('./models/chats.model'); // Import Chat model
 
-connect(); // Connect to the database
+connect(); // Connect to MongoDB
 
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
 
-const userSockets = new Map(); // Map to store userId to socketId mappings
+const userSockets = new Map();
 
-// Middleware setup
+// Middleware
 app.set('view engine', 'ejs');
+app.use(express.json());
 app.use(
   session({
     secret: 'your-secret-key',
@@ -25,7 +27,6 @@ app.use(
     saveUninitialized: true,
   })
 );
-
 app.use(passport.initialize());
 app.use(passport.session());
 
@@ -105,19 +106,44 @@ app.get('/chat', async (req, res) => {
   });
 });
 
+// Fetch chat history between two users
+app.get('/chat/history/:userId', async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  const senderId = req.user._id;
+  const receiverId = req.params.userId;
+
+  try {
+    const messages = await ChatModel.find({
+      $or: [
+        { sender: senderId, receiver: receiverId },
+        { sender: receiverId, receiver: senderId }
+      ]
+    }).sort({ createdAt: 1 });
+
+    res.json(messages);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching chat history' });
+  }
+});
+
 // Socket.io setup
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
 
-  // Handle user joining
   socket.on('join', async (userId) => {
     console.log('User joined with ID:', userId);
     userSockets.set(userId, socket.id);
 
+    // Store userId in the socket object
+    socket.userId = userId;
+
     try {
       await UserModel.findByIdAndUpdate(userId, { socketId: socket.id });
     } catch (error) {
-      console.error('Error updating socketId in the database:', error);
+      console.error('Error updating socketId:', error);
     }
   });
 
@@ -131,17 +157,26 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const receiverSocketId = userSockets.get(receiverId);
-    if (!receiverSocketId) {
-      console.error('Receiver is not connected:', receiverId);
-      return;
-    }
+    try {
+      // Save message in the database
+      const chatMessage = new ChatModel({
+        sender: socket.userId,  // Save sender as the userId (not socket.id)
+        receiver: receiverId,
+        message
+      });
+      await chatMessage.save();
 
-    // Send the message to the receiver
-    io.to(receiverSocketId).emit('message', {
-      senderId: socket.id,
-      message,
-    });
+      // Send the message to the receiver
+      const receiverSocketId = userSockets.get(receiverId);
+      if (receiverSocketId) {
+        io.to(receiverSocketId).emit('message', {
+          senderId: socket.userId,  // Send sender as the userId (not socket.id)
+          message,
+        });
+      }
+    } catch (error) {
+      console.error('Error saving message:', error);
+    }
   });
 
   // Handle user disconnection
@@ -151,13 +186,7 @@ io.on('connection', (socket) => {
     for (const [userId, sockId] of userSockets.entries()) {
       if (sockId === socket.id) {
         userSockets.delete(userId);
-
-        try {
-          await UserModel.findOneAndUpdate({ socketId: socket.id }, { socketId: null });
-        } catch (error) {
-          console.error('Error clearing socketId on disconnect:', error);
-        }
-
+        await UserModel.findOneAndUpdate({ socketId: socket.id }, { socketId: null });
         break;
       }
     }
@@ -166,5 +195,5 @@ io.on('connection', (socket) => {
 
 // Start the server
 server.listen(3000, () => {
-  console.log('Server is running on port 3000');
+  console.log('Server running on port 3000');
 });
